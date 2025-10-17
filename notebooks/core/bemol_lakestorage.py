@@ -1,6 +1,6 @@
 from core.bemol_monitor import BemolMonitor
 
-class BemolLakeHouse:
+class BemolLakeStorage:
   """
   Classe para gerenciar leitura e escrita de dados nas camadas bronze e silver.
   """
