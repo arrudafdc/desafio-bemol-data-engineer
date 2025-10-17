@@ -1,6 +1,6 @@
 # Desafio Técnico Bemol - Data Engineer
 
-## 📋 Sobre o Projeto
+## Sobre o Projeto
 
 Pipeline de ingestão e processamento de dados utilizando arquitetura Lakehouse com camadas Bronze e Silver. O projeto consome dados da [Fake Store API](https://fakestoreapi.com) (users, carts e products) e realiza transformações progressivas para gerar insights sobre vendas por produto.
 
@@ -8,82 +8,195 @@ Pipeline de ingestão e processamento de dados utilizando arquitetura Lakehouse 
 
 ---
 
-## 🎯 Arquitetura do Projeto
+## Arquitetura do Projeto
 
 ### Camada Bronze
 
-Tratamento leve dos dados brutos com foco em limpeza estrutural:
+A camada Bronze realiza o mínimo de processamento necessário para estruturar os dados brutos:
 
-- **Notebook 1 (Carts & Products):** Desaninhamento de carrinho com uma linha por produto, remoção de nulos e tratamentos básicos
-- **Notebook 2 (Users):** Padronização e limpeza dos dados de usuários
+- **Remoção de nulos críticos:** Remove linhas onde campos de chave primária estão vazios
+- **Renomeação de colunas:** Padroniza nomes para melhor compreensão (ex: `title` → `product_title`)
+- **Extração de campos aninhados:** Converte estruturas JSON nested em colunas planas
+- **Desaninhamento (Explode):** Transforma arrays em múltiplas linhas (ex: carrinho com N produtos vira N linhas)
+- **Adição de colunas técnicas:** como timestamp de ingestão
 
 ### Camada Silver
 
-Agregações e transformações de negócio:
+A camada Silver aplica transformações de negócio e prepara dados para análise:
 
-- **Notebook 1 (Analytics):** Agregação de quantidade vendida por produto, enriquecimento com preços e cálculo de valor total vendido
-- **Notebook 2 (Data Quality):** Validações e monitoramento de qualidade dos dados
-
----
-
-## 🛠️ Stack Tecnológico
-
-- **Python** 3.12
-- **PySpark** 3.4.2
-- **Delta Lake** 2.4.0
-- **Requests** (para consumo de API)
-
-> **Nota:** Essas versões foram escolhidas por serem as únicas que permitiram rodar Delta Lake localmente sem conflitos.
+- **Agregações:** Agrupa dados por dimensões (ex: total de produtos vendidos por item)
+- **Joins:** Combina dados de múltiplas tabelas Bronze (ex: carrinho + produtos para obter preços)
+- **Enriquecimento:** Adiciona informações contextuais aos dados (ex: nome do produto em cada venda)
+- **Seleção de colunas:** Remove colunas desnecessárias, mantendo apenas as relevantes
+- **Substituição de valores:** Trata valores específicos conforme regras de negócio
+- **Cálculos simples:** Realiza operações básicas (ex: receita = quantidade × preço)
+- **Validações:** Cria flags e colunas de validação (ex: validação de email com regex)
 
 ---
 
-## 📚 Arquitetura de Classes
+## Arquitetura de Classes
 
 O projeto utiliza programação orientada a objetos para criar uma solução robusta e extensível:
 
-### **Lakehouse**
+### **BemolLakeStorage**
 
-Responsável por leitura e escrita de dados nas camadas Bronze e Silver, simulando um cenário real de Data Lake.
+Classe principal que gerencia leitura e escrita de dados nas camadas Bronze e Silver. Integra automaticamente as classes de logging e monitoramento, garantindo que todas as operações sejam rastreadas e auditadas.
 
-### **LandingReader**
+### **BemolLandingReader**
 
 Abstração para leitura de dados de fontes externas (atualmente implementado para APIs, extensível para outras fontes).
 
-### **Logging**
+### **BemolLogging**
 
-Integrada com `Lakehouse` e `LandingReader`, gera arquivo de logs detalhado sobre todas as operações de leitura e escrita.
+Sistema centralizado de logs que registra todas as operações de leitura e escrita. Gera arquivo de log com timestamp e outros detalhes da operação.
 
-### **Monitor**
+### **BemolMonitor**
 
-Complementa o logging gerando:
+Complementa o logging gerando métricas estruturadas sobre as operações de escrita. Fornece visibilidade sobre volume de dados processados.
 
-- Mensagens estruturadas no arquivo de logs
-- DataFrame com metadados de escrita (count, número de colunas, nome da tabela, timestamp)
+### **BemolController**
 
-### **Controller**
+Gerencia colunas de controle adicionadas aos dados durante o processamento. Marca a camada de origem e timestamp de processamento.
 
-Cria e gerencia colunas de controle com timestamp de processamento, marcando a camada de origem dos dados.
+### **BemolValidator**
 
-### **Validator**
-
-Realiza validações em dados (validação de email com regex), facilmente extensível para outras regras de negócio.
+Realiza validações de dados conforme regras de negócio. Atualmente implementa validação de email com regex, mas facilmente extensível para outras validações.
 
 ---
 
-## 🚀 Como Usar
+## Fluxo de Transformação de Dados
 
-### Pré-requisitos
+### De Bronze para Silver: Exemplo Prático
 
-- Python 3.12 instalado
-- pip para gerenciamento de dependências
+O pipeline transforma dados brutos em informações de negócio através de transformações progressivas.
 
-### Instalação
+#### 1. Desaninhamento (Bronze)
+
+```python
+# Carrinho com array de produtos
+# {id: 5, products: [{productId: 1, quantity: 3}, {productId: 2, quantity: 1}]}
+
+df_carts_bronze = df_carts_bronze.withColumn("products", explode("products"))
+
+# Resultado: 2 linhas (uma por produto)
+# cart_id=5, product_id=1, quantity=3
+# cart_id=5, product_id=2, quantity=1
+```
+
+#### 2. Extração e Renomeação (Bronze)
+
+```python
+df_carts_bronze = df_carts_bronze.select(
+    col("id").alias("cart_id"),
+    col("userId").alias("user_id"),
+    col("date").alias("cart_date"),
+    col("products.productId").alias("product_id"),
+    col("products.quantity").alias("product_quantity")
+)
+
+# Transforma estrutura aninhada em colunas planas e claras
+```
+
+#### 3. Agregação (Silver)
+
+```python
+df_sales = df_carts.groupBy("product_id").agg(
+    sum("product_quantity").alias("total_quantity_sold")
+)
+
+# Resultado: total de quantidade vendida por produto
+# product_id=1, total_quantity_sold=150
+# product_id=2, total_quantity_sold=87
+```
+
+#### 4. Enriquecimento com Join (Silver)
+
+```python
+df_products_silver = df_products.join(
+    df_sales,
+    df_products.id == df_sales.product_id,
+    "left"
+).drop(df_sales.product_id)
+
+# Combina informações de produtos com dados de vendas
+# Agora cada produto tem sua quantidade vendida
+```
+
+#### 5. Tratamento de Nulos (Silver)
+
+```python
+df_products_silver = df_products_silver.fillna(0, subset=["total_quantity_sold"])
+
+# Produtos sem vendas recebem 0 em vez de NULL
+```
+
+#### 6. Cálculo Final (Silver)
+
+```python
+df_products_silver = df_products_silver.withColumn(
+    "total_revenue",
+    col("price") * col("total_quantity_sold")
+)
+
+# Resultado final: tabela com produtos e suas métricas de vendas
+# product_id | product_name | price | total_quantity_sold | total_revenue
+# 1          | Fjallraven   | 109.95| 150                 | 16492.50
+```
+
+### Resultado Final
+
+A tabela Silver `products_sales` contém todas as informações necessárias para análise de vendas por produto, com dados limpos, validados e enriquecidos.
+
+---
+
+# Como Usar
+
+## Pré-requisitos
+
+- Python 3.11 ou anterior
+- Java 8+ instalado
+
+### Instalar Python 3.11
+
+**Mac:**
+
+```bash
+brew install python@3.11
+```
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+sudo apt-get install python3.11 python3.11-venv
+```
+
+**Windows:**
+Baixe em https://www.python.org/downloads/ e instale a versão 3.11.
+
+### Instalar Java
+
+**Mac:**
+
+```bash
+brew install java
+```
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+sudo apt-get install default-jdk
+```
+
+**Windows:**
+Baixe em https://www.oracle.com/java/technologies/downloads/ e instale a versão LTS.
+
+## Instalação
 
 1. Clone o repositório:
 
 ```bash
-git clone <seu-repositorio>
-cd desafio-tecnico-bemol-data-engineer
+git clone https://github.com/seu-usuario/desafio-bemol-data-engineer.git
+cd desafio-bemol-data-engineer
 ```
 
 2. Crie um ambiente virtual:
@@ -91,104 +204,93 @@ cd desafio-tecnico-bemol-data-engineer
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
-# ou
 .venv\Scripts\activate  # Windows
 ```
 
 3. Instale as dependências:
 
 ```bash
-pip install pyspark==3.4.2 delta-spark==2.4.0 requests
+pip install -r requirements.txt
 ```
 
-### Execução
+## Execução
 
-Os notebooks devem ser executados na seguinte ordem:
+### Opção 1: Pipeline Automático (Instável)
 
-**Bronze:**
+```bash
+python run_pipeline.py
+```
 
-1. `notebooks/bronze/01_carts_products.ipynb` - Desaninhamento e limpeza de carrinho e produtos
-2. `notebooks/bronze/02_users.ipynb` - Tratamento de dados de usuários
+O script executará os 4 notebooks em sequência. **Nota:** Este método é instável e pode quebrar no meio da operação, especialmente com grandes volumes de dados.
 
-**Silver:** 3. `notebooks/silver/01_products_analytics.ipynb` - Agregação de vendas por produto 4. `notebooks/silver/02_data_quality.ipynb` - Monitoramento de qualidade
+### Opção 2: Execução Segura (Recomendado)
 
----
+Execute os notebooks individualmente no Jupyter/VSCode, respeitando a ordem:
 
-## 📊 Saída Principal
+**Camada Bronze (executar primeiro):**
 
-A tabela gerada no Silver contém:
+1. `notebooks/bronze_products_carts.ipynb`
+2. `notebooks/bronze_users.ipynb`
 
-| Campo               | Descrição                          |
-| ------------------- | ---------------------------------- |
-| product_id          | ID do produto                      |
-| product_name        | Nome do produto                    |
-| price               | Preço unitário                     |
-| total_quantity_sold | Quantidade total vendida           |
-| total_revenue       | Receita total (preço × quantidade) |
+**Camada Silver (executar depois):**
 
----
+3. `notebooks/silver_products_sales.ipynb`
+4. `notebooks/silver_users.ipynb`
 
-## 📁 Estrutura de Diretórios
+## Outputs
+
+Os notebooks executados geram arquivos Delta em:
+
+- Bronze: `data/bronze/`
+- Silver: `data/silver/`
+
+Se usar `python run_pipeline.py`, os notebooks executados também serão salvos em `output/`.
+
+## Estrutura do Projeto
 
 ```
-desafio-tecnico-bemol-data-engineer/
+desafio-bemol-data-engineer/
 ├── notebooks/
-│   ├── bronze/
-│   │   ├── 01_carts_products.ipynb
-│   │   └── 02_users.ipynb
-│   └── silver/
-│       ├── 01_products_analytics.ipynb
-│       └── 02_data_quality.ipynb
-├── src/
-│   ├── lakehouse.py
-│   ├── landing_reader.py
-│   ├── logging.py
-│   ├── monitor.py
-│   ├── controller.py
-│   └── validator.py
+│   ├── core/
+│   │   ├── bemol_lake_storage.py
+│   │   ├── bemol_controller.py
+│   │   ├── bemol_landing_reader.py
+│   │   ├── bemol_logging.py
+│   │   ├── bemol_monitor.py
+│   │   └── bemol_validator.py
+│   ├── bronze_products_carts.ipynb
+│   ├── bronze_users.ipynb
+│   ├── silver_products_sales.ipynb
+│   └── silver_users.ipynb
 ├── data/
 │   ├── bronze/
-│   └── silver/
+│   │   ├── products_carts/
+│   │   └── users/
+│   ├── silver/
+│   │   ├── products_sales/
+│   │   └── users/
+│   └── monitor/
 ├── logs/
-├── .venv/
-├── README.md
-└── requirements.txt
+│   ├── bronze_products_carts/
+│   ├── bronze_users/
+│   ├── silver_products_sales/
+│   └── silver_users/
+├── output/
+├── run_pipeline.py
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## 🔍 Destaques Técnicos
+## Stack
 
-✅ **Arquitetura Lakehouse:** Simulação realista de um Data Lake com camadas de refino progressivo
+- **Python** 3.11 ou anterior
+- **PySpark** 3.4.2
+- **Delta Lake** 2.4.0
+- **Papermill** (orquestração de notebooks)
+- **Requests** (consumo de API)
 
-✅ **Código Orientado a Objetos:** Implementação de classes reutilizáveis e testáveis
-
-✅ **Logging e Monitoramento:** Rastreamento completo de operações com DataFrame de auditoria
-
-✅ **Validação de Dados:** Classe Validator com suporte a regex para garantir qualidade
-
-✅ **Desaninhamento Inteligente:** Explode de dados de carrinho mantendo contexto de cada item
-
-✅ **Delta Lake Local:** Demonstração de uso de formato open source para versionamento de dados
+**Nota sobre as versões:** Após diversos testes de compatibilidade, esta foi a única combinação de versões que permitiu escrever dados em Delta Lake localmente sem problemas. Versões mais recentes apresentaram incompatibilidades ao tentar fazer operações de escrita com Delta.
 
 ---
-
-## 🔧 Próximos Passos (Sugestões)
-
-- Automatizar execução dos notebooks com orquestrador (Airflow, Databricks Workflows)
-- Adicionar testes unitários para as classes
-- Implementar CI/CD para validação automática
-- Expandir LandingReader para suportar múltiplas fontes (CSV, Parquet, Banco de Dados)
-- Criar pipeline de testes de qualidade de dados mais robustos
-
----
-
-## 📝 Licença
-
-[Especifique a licença, ex: MIT, Apache 2.0, etc.]
-
----
-
-## 📧 Contato
-
-[Seu email ou LinkedIn]
