@@ -1,0 +1,33 @@
+# Ambientes virtuais
+.venv/
+venv/
+env/
+.env
+
+# Outputs e dados
+output/
+data/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Delta/Spark
+*.delta
+metastore_db/
+spark-warehouse/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
