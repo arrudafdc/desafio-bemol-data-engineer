@@ -217,7 +217,7 @@ pip install -r requirements.txt
 
 ### Nota Importante: Ambiente de Desenvolvimento
 
-Durante o desenvolvimento, encontrei muitos problemas de incompatibilidades ao tentar executar PySpark + Delta Lake no ambiente Windows e no Google Colab.
+Durante o desenvolvimento, encontrei diversos problemas de incompatibilidade ao tentar executar PySpark e Delta Lake no ambiente Windows e no Google Colab.
 
 **Solução encontrada:** Usar **WSL2 (Windows Subsystem for Linux)** com as versões específicas definidas no `requirements.txt`.
 
@@ -227,7 +227,7 @@ O código funciona perfeitamente em WSL2 ou Linux/Mac com as seguintes versões:
 - PySpark 3.4.2
 - Delta Lake 2.4.0
 
-**Se você estiver no Windows:**
+**Se você estiver no Windows e tiver problemas de configuração do Java/Hadoop:**
 
 1. Instale WSL2: https://learn.microsoft.com/pt-br/windows/wsl/install
 2. Instale Python 3.11 no WSL2
