@@ -195,7 +195,7 @@ Baixe em https://www.oracle.com/java/technologies/downloads/ e instale a versão
 1. Clone o repositório:
 
 ```bash
-git clone https://github.com/seu-usuario/desafio-bemol-data-engineer.git
+git clone https://github.com/arrudafdc/desafio-bemol-data-engineer.git
 cd desafio-bemol-data-engineer
 ```
 
